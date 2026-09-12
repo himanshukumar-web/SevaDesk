@@ -65,6 +65,23 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ## 🛠️ Tech Stack & Security
 - **Frontend & Backend**: Next.js 14 App Router, React, Strict TypeScript, Tailwind CSS
-- **Database**: SQLite via Prisma ORM (instantly swappable to PostgreSQL / Supabase via connection string)
+- **Database**: Supabase PostgreSQL via Prisma ORM
 - **Authentication**: Role-based access control (RBAC), bcrypt password hashing, HTTP-only secure JWT cookies
 - **Security**: Private document access control, server-side entitlement validation, input sanitization
+
+---
+
+## ☁️ Vercel Deployment & Environment Configuration
+
+When deploying to Vercel, configure the following environment variables in **Project Settings > Environment Variables**:
+
+| Variable | Required | Environments | Description |
+|---|---|---|---|
+| `DATABASE_URL` | **Yes** | Production, Preview, Development | Supabase PostgreSQL Connection Pooler URI (port 6543, with `?pgbouncer=true`) or direct connection URI (port 5432) |
+| `JWT_SECRET` | **Yes** | Production, Preview, Development | Strong, random 64-character secret key for signing auth session tokens |
+| `NEXT_PUBLIC_APP_URL` | Optional | Production, Preview, Development | Canonical public production URL (e.g. `https://sevadesk.vercel.app`) |
+| `NEXT_PUBLIC_SUPABASE_URL` | Optional | Production, Preview, Development | Supabase project URL (`https://your-ref.supabase.co`) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Optional | Production, Preview, Development | Supabase anonymous public key |
+| `SUPABASE_SERVICE_ROLE_KEY` | Optional | Production, Preview, Development | Supabase service-role secret key (server-only) |
+
+> **Note:** Seed commands are **not** run during Vercel builds to ensure production data is never wiped. Run schema migrations and seeding manually from your terminal using `npx prisma db push` and `node prisma/seed.mjs`.
