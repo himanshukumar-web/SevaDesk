@@ -6,8 +6,19 @@ const globalForPrisma = globalThis as unknown as {
 
 /**
  * Creates a single, production-safe PrismaClient instance.
+ * Validates that DATABASE_URL is provided in production without leaking connection secrets.
  */
 function createPrismaClient(): PrismaClient {
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl || dbUrl.trim().length === 0) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        "CRITICAL CONFIGURATION ERROR: DATABASE_URL environment variable is missing in production. " +
+        "Please configure your Supabase PostgreSQL connection string in Vercel project settings."
+      );
+    }
+  }
+
   return new PrismaClient({
     log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
   });

@@ -17,29 +17,40 @@ import {
   ChevronRight,
 } from "lucide-react";
 
-export const revalidate = 60; // 1 min ISR
+export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const [categories, popularServices, verifiedCafes] = await Promise.all([
-    prisma.category.findMany({
-      orderBy: { displayOrder: "asc" },
-      include: {
-        _count: { select: { services: true } },
-      },
-    }),
-    prisma.service.findMany({
-      where: { isPublished: true },
-      take: 6,
-      include: {
-        category: true,
-      },
-    }),
-    prisma.cyberCafe.findMany({
-      where: { verificationStatus: "VERIFIED" },
-      take: 3,
-      orderBy: { rating: "desc" },
-    }),
-  ]);
+  let categories: any[] = [];
+  let popularServices: any[] = [];
+  let verifiedCafes: any[] = [];
+
+  try {
+    const results = await Promise.all([
+      prisma.category.findMany({
+        orderBy: { displayOrder: "asc" },
+        include: {
+          _count: { select: { services: true } },
+        },
+      }),
+      prisma.service.findMany({
+        where: { isPublished: true },
+        take: 6,
+        include: {
+          category: true,
+        },
+      }),
+      prisma.cyberCafe.findMany({
+        where: { verificationStatus: "VERIFIED" },
+        take: 3,
+        orderBy: { rating: "desc" },
+      }),
+    ]);
+    categories = results[0];
+    popularServices = results[1];
+    verifiedCafes = results[2];
+  } catch {
+    // Graceful fallback if database is not reachable
+  }
 
   const quickSearchTags = [
     "Income Certificate",

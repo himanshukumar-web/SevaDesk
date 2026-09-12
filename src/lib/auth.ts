@@ -3,8 +3,19 @@ import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import prisma from "@/lib/prisma";
 
-const JWT_SECRET = process.env.JWT_SECRET || "sevadesk_production_secure_secret_2026_india";
 export const AUTH_COOKIE_NAME = "sevadesk_auth_token";
+
+function getJwtSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (!secret || secret.trim().length === 0) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("CRITICAL SECURITY ERROR: JWT_SECRET environment variable is required in production.");
+    }
+    // Only in non-production local development if unset
+    return "dev_secret_only_for_local_development_not_for_production";
+  }
+  return secret;
+}
 
 export interface SessionPayload {
   userId: string;
@@ -23,16 +34,17 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
 }
 
 export function signToken(payload: SessionPayload): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: "7d" });
+  return jwt.sign(payload, getJwtSecret(), { expiresIn: "7d" });
 }
 
 export function verifyToken(token: string): SessionPayload | null {
   try {
-    return jwt.verify(token, JWT_SECRET) as SessionPayload;
+    return jwt.verify(token, getJwtSecret()) as SessionPayload;
   } catch {
     return null;
   }
 }
+
 
 export async function getCurrentUser() {
   try {

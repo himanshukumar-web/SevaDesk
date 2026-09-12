@@ -73,6 +73,7 @@ export default function ChatPage() {
     // Poll for new messages every 4 seconds
     const interval = setInterval(fetchChatData, 4000);
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestId]);
 
   useEffect(() => {
