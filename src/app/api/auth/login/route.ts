@@ -36,48 +36,40 @@ export async function POST(request: Request) {
       }
 
       // Fetch or link application profile in Prisma database
-      let user = await prisma.user.findFirst({
-        where: {
-          OR: [{ supabaseAuthId: data.user.id }, { email: emailNorm }],
-        },
-        include: {
-          cyberCafe: true,
-        },
-      });
-
-      if (user && !user.supabaseAuthId) {
-        user = await prisma.user.update({
-          where: { id: user.id },
-          data: { supabaseAuthId: data.user.id },
-          include: { cyberCafe: true },
-        });
-      }
-
-      // If profile doesn't exist in Prisma, provision it
-      if (!user) {
-        const meta = data.user.user_metadata || {};
-        const role = meta.role === "CYBER_CAFE" ? "CYBER_CAFE" : meta.role === "SUPER_ADMIN" ? "SUPER_ADMIN" : "USER";
-        user = await prisma.user.create({
-          data: {
-            supabaseAuthId: data.user.id,
-            email: emailNorm,
-            name: meta.name || emailNorm.split("@")[0],
-            phone: meta.phone || "",
-            role,
-            isVerified: true,
+      let user = null;
+      try {
+        user = await prisma.user.findFirst({
+          where: {
+            OR: [{ supabaseAuthId: data.user.id }, { email: emailNorm }],
           },
-          include: { cyberCafe: true },
+          include: {
+            cyberCafe: true,
+          },
         });
+
+        if (user && !user.supabaseAuthId) {
+          user = await prisma.user.update({
+            where: { id: user.id },
+            data: { supabaseAuthId: data.user.id },
+            include: { cyberCafe: true },
+          });
+        }
+      } catch (dbErr) {
+        console.warn("[Login] Could not query Prisma profile:", dbErr);
       }
+
+      const meta = data.user.user_metadata || {};
+      const userRole = user?.role || meta.role || "USER";
+      const userName = user?.name || meta.name || emailNorm.split("@")[0];
 
       return NextResponse.json({
         success: true,
         user: {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          cyberCafe: user.cyberCafe,
+          id: user?.id || data.user.id,
+          name: userName,
+          email: emailNorm,
+          role: userRole,
+          cyberCafe: user?.cyberCafe || null,
         },
       });
     }

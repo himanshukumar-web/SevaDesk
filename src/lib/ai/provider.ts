@@ -31,23 +31,78 @@ export class MockCitizenAssistantProvider implements IAIProvider {
   ): Promise<AssistantResponse> {
     const cleanQuery = query.toLowerCase().trim();
 
-    // 1. Fetch all published services from local DB as ground truth
-    const services = await prisma.service.findMany({
-      where: { isPublished: true },
-      select: {
-        title: true,
-        slug: true,
-        shortDesc: true,
-        whatIsIt: true,
-        eligibility: true,
-        requiredDocsJson: true,
-        stepsJson: true,
-        officialFees: true,
-        processingTime: true,
-        whereToApply: true,
-        officialUrl: true,
-      },
-    });
+    // 1. Fetch all published services from local DB as ground truth with resilient fallback
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let services: any[] = [];
+    try {
+      services = await prisma.service.findMany({
+        where: { isPublished: true },
+        select: {
+          title: true,
+          slug: true,
+          shortDesc: true,
+          whatIsIt: true,
+          eligibility: true,
+          requiredDocsJson: true,
+          stepsJson: true,
+          officialFees: true,
+          processingTime: true,
+          whereToApply: true,
+          officialUrl: true,
+        },
+      });
+    } catch {
+      services = [
+        {
+          title: "Income Certificate (आय प्रमाण पत्र)",
+          slug: "income-certificate",
+          shortDesc: "Official proof of annual household income for scholarship, EWS reservation, and subsidy schemes.",
+          whatIsIt: "State revenue document certifying family income.",
+          eligibility: "Resident citizen of the concerned state.",
+          requiredDocsJson: JSON.stringify(["Salary Slip or Patwari Report", "Aadhaar Card of Applicant", "Self-Declaration Affidavit", "Ration Card or Electricity Bill"]),
+          officialFees: "₹15 - ₹30 depending on State e-District portal",
+          processingTime: "7 - 15 business days",
+          whereToApply: "State e-District Portal / Tahsil Office",
+          officialUrl: "https://edistrict.up.gov.in",
+        },
+        {
+          title: "Caste Certificate (जाति प्रमाण पत्र)",
+          slug: "caste-certificate",
+          shortDesc: "Statutory proof of SC/ST/OBC category membership for affirmative action and reservation benefits.",
+          whatIsIt: "Official certificate confirming social category.",
+          eligibility: "Citizens belonging to notified SC/ST/OBC communities.",
+          requiredDocsJson: JSON.stringify(["Aadhaar Card", "Father's or Blood Relative's Caste Certificate", "School Leaving Certificate / Marksheet", "Land Record / Khatiyan or Pradhan Verification"]),
+          officialFees: "₹15 - ₹30",
+          processingTime: "15 - 21 business days",
+          whereToApply: "State e-District Portal / SDO Office",
+          officialUrl: "https://serviceonline.gov.in",
+        },
+        {
+          title: "Domicile / Residence Certificate (निवास प्रमाण पत्र)",
+          slug: "domicile-certificate",
+          shortDesc: "Legal evidence proving continuous permanent residence in a specific state for employment and education.",
+          whatIsIt: "State document certifying resident status.",
+          eligibility: "Permanent resident with 3-10+ years domicile history.",
+          requiredDocsJson: JSON.stringify(["Aadhaar Card", "Electricity Bill or Land Registry", "Education Proof (10th/12th Marksheet)", "Voter ID of Parent/Applicant"]),
+          officialFees: "₹15 - ₹30",
+          processingTime: "7 - 14 business days",
+          whereToApply: "e-District Portal / Tehsildar Office",
+          officialUrl: "https://edistrict.up.gov.in",
+        },
+        {
+          title: "PAN Card (Permanent Account Number)",
+          slug: "pan-card-application",
+          shortDesc: "10-digit alphanumeric tax identifier issued by Income Tax Department (UTIITSL/Protean NSDL).",
+          whatIsIt: "Mandatory tax and financial identification card.",
+          eligibility: "Any individual, minor, NRI, or business entity.",
+          requiredDocsJson: JSON.stringify(["Aadhaar Card (Serves as Identity, Address & DOB proof)", "2 Passport Size Color Photos", "Existing PAN copy (for corrections)"]),
+          officialFees: "₹107 (Physical card within India)",
+          processingTime: "7 - 10 business days (e-PAN in 48 hours)",
+          whereToApply: "Protean (NSDL) / UTIITSL Portal",
+          officialUrl: "https://www.onlineservices.nsdl.com",
+        },
+      ];
+    }
 
     // 2. If user is currently on a specific service page or template
     if (currentContext?.serviceSlug) {
