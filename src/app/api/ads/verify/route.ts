@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { adProvider, grantAdUnlock } from "@/lib/ad-provider";
 
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
 export async function POST(request: Request) {
+
   try {
     const user = await getCurrentUser();
     if (!user) {
