@@ -1,0 +1,261 @@
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  role         String   @default("USER") // USER, CYBER_CAFE, SUPER_ADMIN
+  name         String
+  phone        String
+  state        String?
+  district     String?
+  city         String?
+  pincode      String?
+  isVerified   Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  cyberCafe       CyberCafe?
+  documents       UserDocument[]
+  serviceRequests ServiceRequest[]
+  reviews         Review[]
+  subscriptions   Subscription[]
+  adUnlocks       AdUnlock[]
+  sentMessages    Message[]
+  reports         Report[]
+  auditLogs       AuditLog[]
+}
+
+model CyberCafe {
+  id                   String   @id @default(cuid())
+  userId               String   @unique
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shopName             String
+  ownerName            String
+  phone                String
+  email                String
+  address              String
+  city                 String
+  district             String
+  state                String
+  pincode              String
+  openingHours         String   @default("9:00 AM - 8:00 PM")
+  servicesOffered      String   @default("Document Typing, Online Applications, Printing, Scanning, Lamination")
+  pricingJson          String   @default("{\"typing\": 30, \"assistance\": 50, \"print\": 5, \"scan\": 10}")
+  verificationStatus   String   @default("PENDING") // PENDING, VERIFIED, REJECTED, SUSPENDED
+  verificationDocsJson String?
+  isAvailable          Boolean  @default(true)
+  rating               Float    @default(5.0)
+  reviewCount          Int      @default(0)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  serviceRequests ServiceRequest[]
+  reviews         Review[]
+}
+
+model Category {
+  id          String    @id @default(cuid())
+  name        String
+  slug        String    @unique
+  description String?
+  icon        String    @default("FileText")
+  displayOrder Int      @default(0)
+  services    Service[]
+}
+
+model Service {
+  id                   String            @id @default(cuid())
+  categoryId           String
+  category             Category          @relation(fields: [categoryId], references: [id])
+  title                String
+  slug                 String            @unique
+  shortDesc            String
+  whatIsIt             String
+  whoNeedsIt           String
+  eligibility          String
+  requiredDocsJson     String // JSON array of string requirements
+  stepsJson            String // JSON array of steps
+  officialFees         String            @default("Free or Nominal State Portal Fee")
+  processingTime       String            @default("7-15 Working Days")
+  whereToApply         String
+  stateSpecificNotesJson String? // JSON object keyed by state
+  officialUrl          String
+  isPublished          Boolean           @default(true)
+  templateId           String?
+  template             DocumentTemplate? @relation(fields: [templateId], references: [id])
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  userDocuments   UserDocument[]
+  serviceRequests ServiceRequest[]
+}
+
+model DocumentTemplate {
+  id             String         @id @default(cuid())
+  title          String
+  slug           String         @unique
+  category       String
+  description    String
+  layoutType     String         @default("standard_application") // standard_application, affidavit, certificate_application
+  instructions   String
+  disclaimer     String         @default("This is a citizen-prepared draft application. It is NOT an official government issued certificate.")
+  fieldsJson     String // JSON array of field configurations
+  sampleDataJson String?
+  isPublished    Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  services      Service[]
+  userDocuments UserDocument[]
+}
+
+model UserDocument {
+  id           String            @id @default(cuid())
+  userId       String
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  templateId   String?
+  template     DocumentTemplate? @relation(fields: [templateId], references: [id])
+  serviceId    String?
+  service      Service?          @relation(fields: [serviceId], references: [id])
+  title        String
+  formDataJson String // JSON filled values
+  status       String            @default("DRAFT") // DRAFT, COMPLETED
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  serviceRequests ServiceRequest[]
+}
+
+model ServiceRequest {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cyberCafeId    String
+  cyberCafe      CyberCafe @relation(fields: [cyberCafeId], references: [id])
+  serviceId      String?
+  service        Service? @relation(fields: [serviceId], references: [id])
+  userDocumentId String?
+  userDocument   UserDocument? @relation(fields: [userDocumentId], references: [id])
+  title          String
+  description    String
+  status         String   @default("PENDING") // PENDING, ACCEPTED, IN_PROGRESS, WAITING_FOR_USER, COMPLETED, CANCELLED, REJECTED
+  quoteAmount    Float?
+  isPaid         Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  statusHistory RequestStatusHistory[]
+  conversation  Conversation?
+  review        Review?
+}
+
+model RequestStatusHistory {
+  id              String         @id @default(cuid())
+  requestId       String
+  serviceRequest  ServiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  status          String
+  note            String?
+  changedByUserId String
+  createdAt       DateTime       @default(now())
+}
+
+model Conversation {
+  id             String         @id @default(cuid())
+  requestId      String         @unique
+  serviceRequest ServiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  user1Id        String // citizen userId
+  user2Id        String // cyber cafe operator userId
+  lastMessageAt  DateTime       @default(now())
+  createdAt      DateTime       @default(now())
+
+  messages Message[]
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String
+  sender         User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  content        String
+  attachmentUrl  String?
+  attachmentName String?
+  isRead         Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+}
+
+model Review {
+  id             String         @id @default(cuid())
+  requestId      String         @unique
+  serviceRequest ServiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cyberCafeId    String
+  cyberCafe      CyberCafe      @relation(fields: [cyberCafeId], references: [id], onDelete: Cascade)
+  rating         Int            @default(5)
+  comment        String
+  isModerated    Boolean        @default(false)
+  createdAt      DateTime       @default(now())
+}
+
+model Subscription {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan       String    @default("FREE") // FREE, PREMIUM
+  status     String    @default("ACTIVE") // ACTIVE, EXPIRED, CANCELLED
+  amount     Float     @default(0.0)
+  startDate  DateTime  @default(now())
+  endDate    DateTime?
+  paymentRef String?
+  createdAt  DateTime  @default(now())
+}
+
+model AdUnlock {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  serviceId   String
+  unlockToken String
+  unlockedAt  DateTime @default(now())
+  expiresAt   DateTime
+}
+
+model Report {
+  id             String   @id @default(cuid())
+  reporterId     String
+  reporter       User     @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+  targetType     String // CYBER_CAFE, MESSAGE, REVIEW, OTHER
+  targetId       String
+  reason         String
+  status         String   @default("OPEN") // OPEN, UNDER_REVIEW, RESOLVED, REJECTED
+  resolutionNote String?
+  createdAt      DateTime @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  action    String
+  entity    String
+  entityId  String?
+  details   String?
+  createdAt DateTime @default(now())
+}
+
+model SystemSetting {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt
+}
