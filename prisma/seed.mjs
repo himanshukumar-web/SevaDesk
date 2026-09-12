@@ -722,6 +722,45 @@ async function main() {
     },
   });
 
+  // Optional: Sync with Supabase Auth if service role credentials are present
+  const sbUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const sbKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (sbUrl && sbKey) {
+    try {
+      const { createClient } = await import("@supabase/supabase-js");
+      const supabaseAdmin = createClient(sbUrl, sbKey, {
+        auth: { autoRefreshToken: false, persistSession: false },
+      });
+      console.log("Synchronizing demo accounts with Supabase Auth...");
+      const demoUsers = [
+        { email: "user@sevadesk.in", password: "User@123456", name: "Rajesh Kumar Sharma", role: "USER" },
+        { email: "operator@delhicyber.in", password: "Cafe@123456", name: "Amit Verma", role: "CYBER_CAFE" },
+        { email: "newcafe@biharseva.in", password: "Cafe@123456", name: "Manoj Kumar", role: "CYBER_CAFE" },
+        { email: "admin@sevadesk.in", password: "Admin@123456", name: "Super Admin", role: "SUPER_ADMIN" },
+      ];
+      for (const du of demoUsers) {
+        try {
+          const { data } = await supabaseAdmin.auth.admin.createUser({
+            email: du.email,
+            password: du.password,
+            email_confirm: true,
+            user_metadata: { name: du.name, role: du.role },
+          });
+          if (data?.user) {
+            await prisma.user.update({
+              where: { email: du.email },
+              data: { supabaseAuthId: data.user.id },
+            });
+          }
+        } catch {
+          // User may already exist in Supabase Auth
+        }
+      }
+    } catch (sbErr) {
+      console.log("Supabase Auth sync skipped:", sbErr.message);
+    }
+  }
+
   console.log("Database seeded successfully!");
   console.log("-----------------------------------------");
   console.log("Test Accounts:");

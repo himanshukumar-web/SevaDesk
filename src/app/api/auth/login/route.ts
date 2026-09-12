@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { verifyPassword, signToken, AUTH_COOKIE_NAME } from "@/lib/auth";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { verifyPassword, AUTH_COOKIE_NAME } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-
   try {
     const body = await request.json();
     const { email, password } = body;
@@ -19,6 +19,70 @@ export async function POST(request: Request) {
     }
 
     const emailNorm = email.toLowerCase().trim();
+    const supabase = createServerSupabaseClient();
+
+    // 1. Primary Authentication: Supabase Auth
+    if (supabase) {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: emailNorm,
+        password,
+      });
+
+      if (error) {
+        return NextResponse.json(
+          { error: error.message || "Invalid email or password. Please check your credentials." },
+          { status: 401 }
+        );
+      }
+
+      // Fetch or link application profile in Prisma database
+      let user = await prisma.user.findFirst({
+        where: {
+          OR: [{ supabaseAuthId: data.user.id }, { email: emailNorm }],
+        },
+        include: {
+          cyberCafe: true,
+        },
+      });
+
+      if (user && !user.supabaseAuthId) {
+        user = await prisma.user.update({
+          where: { id: user.id },
+          data: { supabaseAuthId: data.user.id },
+          include: { cyberCafe: true },
+        });
+      }
+
+      // If profile doesn't exist in Prisma, provision it
+      if (!user) {
+        const meta = data.user.user_metadata || {};
+        const role = meta.role === "CYBER_CAFE" ? "CYBER_CAFE" : meta.role === "SUPER_ADMIN" ? "SUPER_ADMIN" : "USER";
+        user = await prisma.user.create({
+          data: {
+            supabaseAuthId: data.user.id,
+            email: emailNorm,
+            name: meta.name || emailNorm.split("@")[0],
+            phone: meta.phone || "",
+            role,
+            isVerified: true,
+          },
+          include: { cyberCafe: true },
+        });
+      }
+
+      return NextResponse.json({
+        success: true,
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          cyberCafe: user.cyberCafe,
+        },
+      });
+    }
+
+    // 2. Fallback for offline local dev environment without active Supabase credentials
     const user = await prisma.user.findUnique({
       where: { email: emailNorm },
       include: {
@@ -26,7 +90,7 @@ export async function POST(request: Request) {
       },
     });
 
-    if (!user) {
+    if (!user || !user.passwordHash) {
       return NextResponse.json(
         { error: "Invalid email or password. Please check your credentials." },
         { status: 401 }
@@ -41,13 +105,6 @@ export async function POST(request: Request) {
       );
     }
 
-    const token = signToken({
-      userId: user.id,
-      email: user.email,
-      role: user.role as "USER" | "CYBER_CAFE" | "SUPER_ADMIN",
-      name: user.name,
-    });
-
     const response = NextResponse.json({
       success: true,
       user: {
@@ -61,7 +118,7 @@ export async function POST(request: Request) {
 
     response.cookies.set({
       name: AUTH_COOKIE_NAME,
-      value: token,
+      value: user.id,
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",

@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { hashPassword, signToken, AUTH_COOKIE_NAME } from "@/lib/auth";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { hashPassword, AUTH_COOKIE_NAME } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-
   try {
     const body = await request.json();
     const {
@@ -25,7 +25,7 @@ export async function POST(request: Request) {
       servicesOffered,
     } = body;
 
-    // Server-side validation
+    // Validation
     if (!name || !email || !phone || !password) {
       return NextResponse.json(
         { error: "Name, email, mobile number, and password are required." },
@@ -41,6 +41,101 @@ export async function POST(request: Request) {
     }
 
     const emailNorm = email.toLowerCase().trim();
+    const validRole = role === "CYBER_CAFE" ? "CYBER_CAFE" : "USER";
+
+    const supabase = createServerSupabaseClient();
+
+    // 1. Primary Authentication: Supabase Auth
+    if (supabase) {
+      // Check if user exists in database first
+      const existing = await prisma.user.findFirst({
+        where: { email: emailNorm },
+      });
+
+      if (existing) {
+        return NextResponse.json(
+          { error: "An account with this email address already exists." },
+          { status: 409 }
+        );
+      }
+
+      // Sign up with Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: emailNorm,
+        password,
+        options: {
+          data: {
+            name: name.trim(),
+            phone: phone.trim(),
+            role: validRole,
+          },
+        },
+      });
+
+      if (authError) {
+        return NextResponse.json(
+          { error: authError.message || "Registration failed via Supabase Auth." },
+          { status: 400 }
+        );
+      }
+
+      const supabaseAuthId = authData.user?.id || null;
+
+      // Provision profile in application database
+      const user = await prisma.user.create({
+        data: {
+          supabaseAuthId,
+          name: name.trim(),
+          email: emailNorm,
+          phone: phone.trim(),
+          role: validRole,
+          state: state || null,
+          district: district || null,
+          city: city || null,
+          pincode: pincode || null,
+          isVerified: true,
+          ...(validRole === "CYBER_CAFE"
+            ? {
+                cyberCafe: {
+                  create: {
+                    shopName: shopName || `${name.trim()}'s Digital Seva Kendra`,
+                    ownerName: name.trim(),
+                    phone: phone.trim(),
+                    email: emailNorm,
+                    address: address || "Local Market",
+                    city: city || "City",
+                    district: district || "District",
+                    state: state || "State",
+                    pincode: pincode || "000000",
+                    servicesOffered:
+                      servicesOffered || "Document Typing, Online Applications, Printing, Scanning",
+                    verificationStatus: "PENDING",
+                  },
+                },
+              }
+            : {}),
+        },
+        include: {
+          cyberCafe: true,
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: authData.session
+          ? "Account registered successfully."
+          : "Account created! Please check your email to confirm your registration.",
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          cyberCafe: user.cyberCafe,
+        },
+      });
+    }
+
+    // 2. Fallback for offline local dev environment without active Supabase credentials
     const existing = await prisma.user.findUnique({
       where: { email: emailNorm },
     });
@@ -53,7 +148,6 @@ export async function POST(request: Request) {
     }
 
     const passwordHash = await hashPassword(password);
-    const validRole = role === "CYBER_CAFE" ? "CYBER_CAFE" : "USER";
 
     const user = await prisma.user.create({
       data: {
@@ -80,7 +174,8 @@ export async function POST(request: Request) {
                   district: district || "District",
                   state: state || "State",
                   pincode: pincode || "000000",
-                  servicesOffered: servicesOffered || "Document Typing, Online Applications, Printing, Scanning",
+                  servicesOffered:
+                    servicesOffered || "Document Typing, Online Applications, Printing, Scanning",
                   verificationStatus: "PENDING",
                 },
               },
@@ -90,13 +185,6 @@ export async function POST(request: Request) {
       include: {
         cyberCafe: true,
       },
-    });
-
-    const token = signToken({
-      userId: user.id,
-      email: user.email,
-      role: user.role as "USER" | "CYBER_CAFE" | "SUPER_ADMIN",
-      name: user.name,
     });
 
     const response = NextResponse.json({
@@ -112,7 +200,7 @@ export async function POST(request: Request) {
 
     response.cookies.set({
       name: AUTH_COOKIE_NAME,
-      value: token,
+      value: user.id,
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",

@@ -78,10 +78,64 @@ When deploying to Vercel, configure the following environment variables in **Pro
 | Variable | Required | Environments | Description |
 |---|---|---|---|
 | `DATABASE_URL` | **Yes** | Production, Preview, Development | Supabase PostgreSQL Connection Pooler URI (port 6543, with `?pgbouncer=true`) or direct connection URI (port 5432) |
-| `JWT_SECRET` | **Yes** | Production, Preview, Development | Strong, random 64-character secret key for signing auth session tokens |
+| `NEXT_PUBLIC_SUPABASE_URL` | **Yes** | Production, Preview, Development | Supabase Project URL (`https://[YOUR-PROJECT-ID].supabase.co`) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | **Yes** | Production, Preview, Development | Supabase Anonymous Public API Key |
+| `SUPABASE_SERVICE_ROLE_KEY` | Optional | Production, Preview, Development | Supabase Service Role Secret Key (Server-only; for seed sync & admin tasks) |
 | `NEXT_PUBLIC_APP_URL` | Optional | Production, Preview, Development | Canonical public production URL (e.g. `https://sevadesk.vercel.app`) |
-| `NEXT_PUBLIC_SUPABASE_URL` | Optional | Production, Preview, Development | Supabase project URL (`https://your-ref.supabase.co`) |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Optional | Production, Preview, Development | Supabase anonymous public key |
-| `SUPABASE_SERVICE_ROLE_KEY` | Optional | Production, Preview, Development | Supabase service-role secret key (server-only) |
+| `JWT_SECRET` | Optional | Production, Preview, Development | Secret key for legacy fallback session signing |
 
 > **Note:** Seed commands are **not** run during Vercel builds to ensure production data is never wiped. Run schema migrations and seeding manually from your terminal using `npx prisma db push` and `node prisma/seed.mjs`.
+
+---
+
+## ⚡ Supabase Dashboard Setup Guide
+
+Follow these steps to configure your Supabase backend for SevaDesk:
+
+### 1. Create a Supabase Project
+1. Log in to [Supabase](https://supabase.com) and click **New Project**.
+2. Select an organization, provide a project name (e.g., `sevadesk-prod`), and generate a strong database password.
+3. Choose the region closest to your primary user base (e.g., `ap-south-1` Mumbai).
+
+### 2. Locate Your Credentials
+- **API Credentials**: Navigate to **Project Settings > API**:
+  - `Project URL` → `NEXT_PUBLIC_SUPABASE_URL`
+  - `anon public` key → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+  - `service_role secret` key → `SUPABASE_SERVICE_ROLE_KEY` (Keep secure, never expose in frontend)
+- **Database Connection String**: Navigate to **Project Settings > Database**:
+  - Under **Connection string > URI**, select **Connection pooling (Transaction mode)** on port `6543`.
+  - Copy URI and replace `[YOUR-PASSWORD]` → `DATABASE_URL`.
+
+### 3. Push Prisma Schema
+Push the application tables and relations directly to your Supabase PostgreSQL database:
+```bash
+npx prisma db push
+```
+
+### 4. Execute Row Level Security (RLS) Policies
+1. In the Supabase Dashboard, open the **SQL Editor**.
+2. Open [`supabase/rls_policies.sql`](supabase/rls_policies.sql), paste its contents into a new query, and click **Run**.
+3. This secures all public tables (`User`, `CyberCafe`, `UserDocument`, `ServiceRequest`, `Conversation`, `Message`, `Review`, `AuditLog`, etc.) with role-based policies.
+
+### 5. Configure Storage Buckets & Storage Policies
+1. In the Supabase Dashboard SQL Editor, open and run [`supabase/storage_setup.sql`](supabase/storage_setup.sql).
+2. This creates:
+   - `documents` (Private, 15MB limit, signed URLs for citizen proofs and drafted PDFs)
+   - `avatars` (Public, 5MB limit, profile pictures)
+   - `templates` (Public, 10MB limit, blank government application templates)
+
+### 6. Configure Auth Redirect URLs
+In Supabase Dashboard under **Authentication > URL Configuration**:
+- **Site URL**: `https://your-domain.vercel.app` (or `http://localhost:3000` for local development)
+- **Redirect URLs**:
+  - `http://localhost:3000/**`
+  - `https://your-domain.vercel.app/**`
+  - `https://your-domain.vercel.app/auth/callback`
+  - `https://your-domain.vercel.app/auth/reset-password`
+
+### 7. Seed Demo Data (Optional)
+To seed initial categories, 15+ central/state government services, document templates, and test accounts:
+```bash
+node prisma/seed.mjs
+```
+

@@ -12,19 +12,21 @@ generator client {
 
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String
-  role         String   @default("USER") // USER, CYBER_CAFE, SUPER_ADMIN
-  name         String
-  phone        String
-  state        String?
-  district     String?
-  city         String?
-  pincode      String?
-  isVerified   Boolean  @default(false)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id             String   @id @default(cuid())
+  supabaseAuthId String?  @unique
+  email          String   @unique
+  passwordHash   String?
+  role           String   @default("USER") // USER, CYBER_CAFE, SUPER_ADMIN
+  name           String
+  phone          String
+  avatarUrl      String?
+  state          String?
+  district       String?
+  city           String?
+  pincode        String?
+  isVerified     Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   cyberCafe       CyberCafe?
   documents       UserDocument[]

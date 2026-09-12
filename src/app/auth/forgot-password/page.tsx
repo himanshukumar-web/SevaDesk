@@ -8,10 +8,23 @@ export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [submitted, setSubmitted] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (email) {
+    if (!email) return;
+    setIsLoading(true);
+    try {
+      await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
       setSubmitted(true);
+    } catch {
+      setSubmitted(true);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -67,9 +80,10 @@ export default function ForgotPasswordPage() {
 
               <button
                 type="submit"
-                className="w-full py-2.5 rounded-lg bg-seva-navy-900 hover:bg-seva-navy-800 text-white font-semibold text-xs shadow flex items-center justify-center space-x-1.5 transition"
+                disabled={isLoading}
+                className="w-full py-2.5 rounded-lg bg-seva-navy-900 hover:bg-seva-navy-800 text-white font-semibold text-xs shadow flex items-center justify-center space-x-1.5 transition disabled:opacity-50"
               >
-                <span>Send Reset Link</span>
+                <span>{isLoading ? "Dispatching..." : "Send Reset Link"}</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
 

@@ -1,21 +1,9 @@
-import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import prisma from "@/lib/prisma";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 export const AUTH_COOKIE_NAME = "sevadesk_auth_token";
-
-function getJwtSecret(): string {
-  const secret = process.env.JWT_SECRET;
-  if (!secret || secret.trim().length === 0) {
-    if (process.env.NODE_ENV === "production") {
-      throw new Error("CRITICAL SECURITY ERROR: JWT_SECRET environment variable is required in production.");
-    }
-    // Only in non-production local development if unset
-    return "dev_secret_only_for_local_development_not_for_production";
-  }
-  return secret;
-}
 
 export interface SessionPayload {
   userId: string;
@@ -33,59 +21,174 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
   return bcrypt.compare(password, hash);
 }
 
-export function signToken(payload: SessionPayload): string {
-  return jwt.sign(payload, getJwtSecret(), { expiresIn: "7d" });
-}
-
-export function verifyToken(token: string): SessionPayload | null {
-  try {
-    return jwt.verify(token, getJwtSecret()) as SessionPayload;
-  } catch {
-    return null;
-  }
-}
-
-
+/**
+ * Retrieves the currently authenticated user profile from Supabase Auth and Prisma database.
+ * Supabase Auth manages identity and security tokens;
+ * Prisma PostgreSQL stores application profile, cyber cafe status, and subscriptions.
+ */
 export async function getCurrentUser() {
   try {
-    const cookieStore = cookies();
-    const token = cookieStore.get(AUTH_COOKIE_NAME)?.value;
-    if (!token) return null;
+    const supabase = createServerSupabaseClient();
+    
+    // 1. Check Supabase Auth session via server cookies
+    if (supabase) {
+      const {
+        data: { user: authUser },
+      } = await supabase.auth.getUser();
 
-    const payload = verifyToken(token);
-    if (!payload?.userId) return null;
+      if (authUser && authUser.email) {
+        const normalizedEmail = authUser.email.toLowerCase().trim();
 
-    const user = await prisma.user.findUnique({
-      where: { id: payload.userId },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        phone: true,
-        state: true,
-        district: true,
-        city: true,
-        pincode: true,
-        isVerified: true,
-        cyberCafe: {
+        // Query application profile by Supabase Auth UID or email
+        let user = await prisma.user.findFirst({
+          where: {
+            OR: [
+              { supabaseAuthId: authUser.id },
+              { email: normalizedEmail },
+            ],
+          },
           select: {
             id: true,
-            shopName: true,
-            verificationStatus: true,
-            isAvailable: true,
-            rating: true,
+            supabaseAuthId: true,
+            email: true,
+            name: true,
+            role: true,
+            phone: true,
+            avatarUrl: true,
+            state: true,
+            district: true,
+            city: true,
+            pincode: true,
+            isVerified: true,
+            cyberCafe: {
+              select: {
+                id: true,
+                shopName: true,
+                verificationStatus: true,
+                isAvailable: true,
+                rating: true,
+              },
+            },
+            subscriptions: {
+              where: { status: "ACTIVE" },
+              orderBy: { createdAt: "desc" },
+              take: 1,
+            },
+          },
+        });
+
+        // If user exists by email but doesn't have supabaseAuthId linked, link it now
+        if (user && !user.supabaseAuthId) {
+          try {
+            await prisma.user.update({
+              where: { id: user.id },
+              data: { supabaseAuthId: authUser.id },
+            });
+            user.supabaseAuthId = authUser.id;
+          } catch (linkErr) {
+            console.warn("[Auth] Could not link supabaseAuthId:", linkErr);
+          }
+        }
+
+        // If user doesn't exist in Prisma database yet (e.g. direct Supabase signup), auto-provision profile
+        if (!user) {
+          try {
+            const meta = authUser.user_metadata || {};
+            const role =
+              meta.role === "CYBER_CAFE"
+                ? "CYBER_CAFE"
+                : meta.role === "SUPER_ADMIN"
+                ? "SUPER_ADMIN"
+                : "USER";
+
+            user = await prisma.user.create({
+              data: {
+                supabaseAuthId: authUser.id,
+                email: normalizedEmail,
+                name: meta.name || normalizedEmail.split("@")[0],
+                phone: meta.phone || "",
+                role,
+                isVerified: true,
+              },
+              select: {
+                id: true,
+                supabaseAuthId: true,
+                email: true,
+                name: true,
+                role: true,
+                phone: true,
+                avatarUrl: true,
+                state: true,
+                district: true,
+                city: true,
+                pincode: true,
+                isVerified: true,
+                cyberCafe: {
+                  select: {
+                    id: true,
+                    shopName: true,
+                    verificationStatus: true,
+                    isAvailable: true,
+                    rating: true,
+                  },
+                },
+                subscriptions: {
+                  where: { status: "ACTIVE" },
+                  orderBy: { createdAt: "desc" },
+                  take: 1,
+                },
+              },
+            });
+          } catch (createErr) {
+            console.error("[Auth] Could not provision user profile from Supabase Auth:", createErr);
+          }
+        }
+
+        if (user) {
+          return user;
+        }
+      }
+    }
+
+    // 2. Fallback check for local development session cookie if Supabase credentials are unset
+    const cookieStore = cookies();
+    const token = cookieStore.get(AUTH_COOKIE_NAME)?.value;
+    if (token) {
+      const user = await prisma.user.findFirst({
+        where: { id: token },
+        select: {
+          id: true,
+          supabaseAuthId: true,
+          email: true,
+          name: true,
+          role: true,
+          phone: true,
+          avatarUrl: true,
+          state: true,
+          district: true,
+          city: true,
+          pincode: true,
+          isVerified: true,
+          cyberCafe: {
+            select: {
+              id: true,
+              shopName: true,
+              verificationStatus: true,
+              isAvailable: true,
+              rating: true,
+            },
+          },
+          subscriptions: {
+            where: { status: "ACTIVE" },
+            orderBy: { createdAt: "desc" },
+            take: 1,
           },
         },
-        subscriptions: {
-          where: { status: "ACTIVE" },
-          orderBy: { createdAt: "desc" },
-          take: 1,
-        },
-      },
-    });
+      });
+      if (user) return user;
+    }
 
-    return user;
+    return null;
   } catch (error) {
     console.error("Error fetching current user:", error);
     return null;
